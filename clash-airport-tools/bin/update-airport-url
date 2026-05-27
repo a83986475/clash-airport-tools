@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+CONFIG_DIR="/root/.config/clash"
+PROFILE_DIR="$CONFIG_DIR/profiles"
+trim(){ local var="$*"; var="${var#"${var%%[![:space:]]*}"}"; var="${var%"${var##*[![:space:]]}"}"; printf '%s' "$var"; }
+[[ $# -lt 1 ]] && echo "用法: update-airport-url 名字" && exit 1
+key="$1"; file="$PROFILE_DIR/${key}.yaml"
+[[ ! -f "$file" ]] && echo "配置不存在: $file" && exit 1
+display_name="$(awk '/^proxy-providers:/{flag=1;next} flag && $0 ~ /^[[:space:]]{2}[^:]+:$/ {gsub(/^[[:space:]]+|:$/, "", $0); print; exit}' "$file")"
+old_url="$(awk '/^[[:space:]]*url:[[:space:]]*/ {sub(/^[[:space:]]*url:[[:space:]]*/, "", $0); gsub(/^"|"$/, "", $0); print; exit}' "$file")"
+[[ -z "$display_name" ]] && echo "无法读取显示名称" && exit 1
+echo "当前机场: $key"
+echo "显示名称: $display_name"
+echo "当前订阅: $old_url"
+echo
+read -rp "请输入新的订阅链接: " raw_url
+new_url="$(trim "$raw_url")"
+[[ -z "$new_url" ]] && echo "订阅链接不能为空" && exit 1
+cat > "$file" <<EOT
+port: 7890
+socks-port: 7891
+allow-lan: true
+mode: rule
+log-level: info
+external-controller: 0.0.0.0:9090
+secret: clash123456
+external-ui: /root/.config/clash/dashboard
+
+proxy-providers:
+  ${display_name}:
+    type: http
+    url: "${new_url}"
+    path: ./providers/${key}.yaml
+    interval: 3600
+    health-check:
+      enable: true
+      interval: 600
+      url: https://www.gstatic.com/generate_204
+
+proxy-groups:
+  - name: 节点选择
+    type: select
+    use:
+      - ${display_name}
+    proxies:
+      - DIRECT
+
+  - name: 自动选择
+    type: url-test
+    use:
+      - ${display_name}
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+
+rules:
+  - MATCH,节点选择
+EOT
+echo "订阅链接已更新: $key"
+echo "执行: switch-clash $key"

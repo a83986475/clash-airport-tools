@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+CONFIG_DIR="/root/.config/clash"
+PROFILE_DIR="$CONFIG_DIR/profiles"
+PROVIDER_DIR="$CONFIG_DIR/providers"
+DASHBOARD_DIR="$CONFIG_DIR/dashboard"
+MAP_FILE="$CONFIG_DIR/profile-map.txt"
+mkdir -p "$PROFILE_DIR" "$PROVIDER_DIR"
+trim(){ local var="$*"; var="${var#"${var%%[![:space:]]*}"}"; var="${var%"${var##*[![:space:]]}"}"; printf '%s' "$var"; }
+sanitize_key(){ echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g'; }
+write_profile(){ local key="$1" display_name="$2" sub_url="$3" file="$PROFILE_DIR/${key}.yaml" provider_file="./providers/${key}.yaml"; cat > "$file" <<EOT
+port: 7890
+socks-port: 7891
+allow-lan: true
+mode: rule
+log-level: info
+external-controller: 0.0.0.0:9090
+secret: clash123456
+external-ui: ${DASHBOARD_DIR}
+
+proxy-providers:
+  ${display_name}:
+    type: http
+    url: "${sub_url}"
+    path: ${provider_file}
+    interval: 3600
+    health-check:
+      enable: true
+      interval: 600
+      url: https://www.gstatic.com/generate_204
+
+proxy-groups:
+  - name: 节点选择
+    type: select
+    use:
+      - ${display_name}
+    proxies:
+      - DIRECT
+
+  - name: 自动选择
+    type: url-test
+    use:
+      - ${display_name}
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+
+rules:
+  - MATCH,节点选择
+EOT
+}
+echo "=== 新增机场配置 ==="
+read -rp "显示名称（例：香港机场）: " raw_display
+read -rp "切换名字（例：hk）: " raw_key
+read -rp "订阅链接: " raw_url
+display_name="$(trim "$raw_display")"
+key="$(sanitize_key "$(trim "$raw_key")")"
+url="$(trim "$raw_url")"
+[[ -z "$display_name" || -z "$key" || -z "$url" ]] && echo "错误：显示名称、切换名字、订阅链接不能为空" && exit 1
+[[ -f "$PROFILE_DIR/${key}.yaml" ]] && echo "错误：名字已存在 -> $key" && exit 1
+write_profile "$key" "$display_name" "$url"
+touch "$MAP_FILE"
+echo "${key}|${display_name}|${PROFILE_DIR}/${key}.yaml" >> "$MAP_FILE"
+echo "已创建配置：$PROFILE_DIR/${key}.yaml"
+echo "你现在可以这样切换：switch-clash ${key}"

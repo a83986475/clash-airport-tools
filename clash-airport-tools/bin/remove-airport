@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+CONFIG_DIR="/root/.config/clash"
+PROFILE_DIR="$CONFIG_DIR/profiles"
+PROVIDER_DIR="$CONFIG_DIR/providers"
+MAP_FILE="$CONFIG_DIR/profile-map.txt"
+[[ $# -lt 1 ]] && echo "用法: remove-airport 名字" && exit 1
+key="$1"; profile_file="$PROFILE_DIR/${key}.yaml"; provider_file="$PROVIDER_DIR/${key}.yaml"
+[[ ! -f "$profile_file" ]] && echo "配置不存在: $profile_file" && exit 1
+read -rp "确认删除机场 [$key] ? 输入 yes 继续: " confirm
+[[ "$confirm" != "yes" ]] && echo "已取消" && exit 0
+rm -f "$profile_file" "$provider_file"
+[[ -f "$MAP_FILE" ]] && sed -i "\|^${key}|d" "$MAP_FILE"
+echo "已删除: $key"

@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+CONFIG_DIR="/root/.config/clash"
+PROFILE_DIR="$CONFIG_DIR/profiles"
+PROVIDER_DIR="$CONFIG_DIR/providers"
+DASHBOARD_DIR="$CONFIG_DIR/dashboard"
+MAP_FILE="$CONFIG_DIR/profile-map.txt"
+trim(){ local var="$*"; var="${var#"${var%%[![:space:]]*}"}"; var="${var%"${var##*[![:space:]]}"}"; printf '%s' "$var"; }
+sanitize_key(){ echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g'; }
+write_profile(){ local key="$1" display_name="$2" sub_url="$3" file="$PROFILE_DIR/${key}.yaml" provider_file="./providers/${key}.yaml"; cat > "$file" <<EOT
+port: 7890
+socks-port: 7891
+allow-lan: true
+mode: rule
+log-level: info
+external-controller: 0.0.0.0:9090
+secret: clash123456
+external-ui: ${DASHBOARD_DIR}
+
+proxy-providers:
+  ${display_name}:
+    type: http
+    url: "${sub_url}"
+    path: ${provider_file}
+    interval: 3600
+    health-check:
+      enable: true
+      interval: 600
+      url: https://www.gstatic.com/generate_204
+
+proxy-groups:
+  - name: 节点选择
+    type: select
+    use:
+      - ${display_name}
+    proxies:
+      - DIRECT
+
+  - name: 自动选择
+    type: url-test
+    use:
+      - ${display_name}
+    url: https://www.gstatic.com/generate_204
+    interval: 300
+
+rules:
+  - MATCH,节点选择
+EOT
+}
+[[ $# -lt 2 ]] && echo "用法: rename-airport 旧名字 新名字" && exit 1
+old_key="$1"; new_key="$(sanitize_key "$2")"
+old_file="$PROFILE_DIR/${old_key}.yaml"; new_file="$PROFILE_DIR/${new_key}.yaml"; old_provider="$PROVIDER_DIR/${old_key}.yaml"; new_provider="$PROVIDER_DIR/${new_key}.yaml"
+[[ ! -f "$old_file" ]] && echo "旧配置不存在: $old_file" && exit 1
+[[ -f "$new_file" ]] && echo "新名字已存在: $new_key" && exit 1
+old_url="$(grep 'url:' "$old_file" | head -n1 | sed 's/^[[:space:]]*url:[[:space:]]*//; s/^"//; s/"$//')"
+[[ -z "$old_url" ]] && echo "无法读取原订阅链接" && exit 1
+read -rp "新的显示名称（例：香港机场2）: " raw_display
+display_name="$(trim "$raw_display")"
+[[ -z "$display_name" ]] && echo "显示名称不能为空" && exit 1
+write_profile "$new_key" "$display_name" "$old_url"
+rm -f "$old_file"
+[[ -f "$old_provider" ]] && mv "$old_provider" "$new_provider"
+[[ -f "$MAP_FILE" ]] && sed -i "\|^${old_key}|d" "$MAP_FILE"
+touch "$MAP_FILE"
+echo "${new_key}|${display_name}|${new_file}" >> "$MAP_FILE"
+echo "已重命名: ${old_key} -> ${new_key}"
+echo "你现在可以这样切换: switch-clash ${new_key}"

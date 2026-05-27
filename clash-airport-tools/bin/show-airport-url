@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+CONFIG_DIR="/root/.config/clash"
+PROFILE_DIR="$CONFIG_DIR/profiles"
+[[ $# -lt 1 ]] && echo "用法: show-airport-url 名字" && exit 1
+key="$1"; file="$PROFILE_DIR/${key}.yaml"
+[[ ! -f "$file" ]] && echo "配置不存在: $file" && exit 1
+awk '/^[[:space:]]*url:[[:space:]]*/ {sub(/^[[:space:]]*url:[[:space:]]*/, "", $0); gsub(/^"|"$/, "", $0); print; exit}' "$file"

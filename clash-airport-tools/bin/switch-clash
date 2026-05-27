@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+CONFIG_DIR="/root/.config/clash"
+PROFILE_DIR="$CONFIG_DIR/profiles"
+MAP_FILE="$CONFIG_DIR/profile-map.txt"
+SERVICE_NAME="clash"
+if systemctl list-unit-files | grep -q '^clash\.service'; then SERVICE_NAME="clash"; elif systemctl list-unit-files | grep -q '^mihomo\.service'; then SERVICE_NAME="mihomo"; fi
+if [[ $# -lt 1 ]]; then echo "用法:"; echo "  switch-clash 名字"; echo "  switch-clash list"; exit 1; fi
+cmd="$1"
+if [[ "$cmd" == "list" ]]; then
+  if [[ -f "$MAP_FILE" ]]; then column -t -s '|' "$MAP_FILE" 2>/dev/null || cat "$MAP_FILE"; else echo "暂无配置"; fi
+  exit 0
+fi
+target="$PROFILE_DIR/${cmd}.yaml"
+[[ ! -f "$target" ]] && echo "配置不存在: $target" && exit 1
+cp "$target" "$CONFIG_DIR/config.yaml"
+systemctl restart "$SERVICE_NAME"
+sleep 1
+if systemctl is-active --quiet "$SERVICE_NAME"; then echo "已切换到: $cmd"; echo "服务状态: $SERVICE_NAME running"; else echo "切换后服务启动失败，请检查:"; echo "  systemctl status $SERVICE_NAME"; echo "  journalctl -u $SERVICE_NAME -n 50 --no-pager"; exit 1; fi
