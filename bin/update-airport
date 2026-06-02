@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_DIR="/root/.config/clash"
+PROFILE_DIR="$CONFIG_DIR/profiles"
+API_URL="http://127.0.0.1:9090"
+SECRET_FILE="$CONFIG_DIR/secret.txt"
+
+# 读取 secret
+if [[ -f "$SECRET_FILE" ]]; then
+  SECRET=$(cat "$SECRET_FILE")
+else
+  SECRET=$(grep '^secret:' "$CONFIG_DIR/config.yaml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "")
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "用法:"
+  echo "  update-airport 名字       # 刷新指定机场订阅"
+  echo "  update-airport all        # 刷新所有机场订阅"
+  exit 1
+fi
+
+cmd="$1"
+
+# 获取所有 provider 名称
+get_providers() {
+  curl -s -H "Authorization: Bearer $SECRET" "$API_URL/providers/proxies" | \
+    python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+for name, info in data.get('proxies', {}).items():
+    if info.get('vehicleType') == 'HTTP':
+        print(name)
+" 2>/dev/null
+}
+
+# 刷新单个 provider
+refresh_provider() {
+  local name="$1"
+  result=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
+    -H "Authorization: Bearer $SECRET" \
+    "$API_URL/providers/proxies/$name")
+  if [[ "$result" == "204" ]]; then
+    echo "✓ $name 刷新成功"
+  else
+    echo "✗ $name 刷新失败 (HTTP $result)"
+  fi
+}
+
+if [[ "$cmd" == "all" ]]; then
+  echo "刷新所有订阅..."
+  providers=$(get_providers)
+  if [[ -z "$providers" ]]; then
+    echo "未找到任何订阅，请确认 Clash 正在运行"
+    exit 1
+  fi
+  while IFS= read -r p; do
+    refresh_provider "$p"
+  done <<< "$providers"
+  echo "全部完成！"
+else
+  # 查找 profile 对应的 provider 名称
+  profile="$PROFILE_DIR/${cmd}.yaml"
+  if [[ ! -f "$profile" ]]; then
+    echo "配置不存在: $profile"
+    exit 1
+  fi
+  # 从 profile 里读取 provider 名称
+  provider_name=$(grep -A1 "^proxy-providers:" "$profile" 2>/dev/null | tail -1 | tr -d ' :' || echo "$cmd")
+  echo "刷新订阅: $cmd ($provider_name)..."
+  refresh_provider "$provider_name"
+fi
