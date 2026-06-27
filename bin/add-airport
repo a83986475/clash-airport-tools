@@ -36,6 +36,7 @@ proxy-providers:
   ${display_name}:
     type: http
     url: "${sub_url}"
+    proxy: 节点选择
     path: ${provider_file}
     interval: 3600
     health-check:
