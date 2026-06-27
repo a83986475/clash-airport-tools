@@ -5,17 +5,31 @@ PROFILE_DIR="$CONFIG_DIR/profiles"
 PROVIDER_DIR="$CONFIG_DIR/providers"
 DASHBOARD_DIR="$CONFIG_DIR/dashboard"
 MAP_FILE="$CONFIG_DIR/profile-map.txt"
+SECRET_FILE="$CONFIG_DIR/secret.txt"
 mkdir -p "$PROFILE_DIR" "$PROVIDER_DIR"
+
 trim(){ local var="$*"; var="${var#"${var%%[![:space:]]*}"}"; var="${var%"${var##*[![:space:]]}"}"; printf '%s' "$var"; }
 sanitize_key(){ echo "$1" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g'; }
-write_profile(){ local key="$1" display_name="$2" sub_url="$3" file="$PROFILE_DIR/${key}.yaml" provider_file="./providers/${key}.yaml"; cat > "$file" <<EOT
+
+# 读取 secret
+if [[ -f "$SECRET_FILE" ]]; then
+  SECRET=$(cat "$SECRET_FILE")
+else
+  SECRET=$(grep '^secret:' "$CONFIG_DIR/config.yaml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "clash123456")
+fi
+
+write_profile(){
+  local key="$1" display_name="$2" sub_url="$3"
+  local file="$PROFILE_DIR/${key}.yaml"
+  local provider_file="./providers/${key}.yaml"
+  cat > "$file" <<EOT
 port: 7890
 socks-port: 7891
 allow-lan: true
 mode: rule
 log-level: info
-external-controller: 0.0.0.0:9090
-secret: clash123456
+external-controller: 127.0.0.1:9090
+secret: ${SECRET}
 external-ui: ${DASHBOARD_DIR}
 
 proxy-providers:
@@ -48,6 +62,7 @@ rules:
   - MATCH,节点选择
 EOT
 }
+
 echo "=== 新增机场配置 ==="
 read -rp "显示名称（例：香港机场）: " raw_display
 read -rp "切换名字（例：hk）: " raw_key
