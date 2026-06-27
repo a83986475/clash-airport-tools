@@ -10,7 +10,12 @@ SECRET_FILE="$CONFIG_DIR/secret.txt"
 if [[ -f "$SECRET_FILE" ]]; then
   SECRET=$(cat "$SECRET_FILE")
 else
-  SECRET=$(grep '^secret:' "$CONFIG_DIR/config.yaml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "")
+  SECRET=$(sudo grep '^secret:' "$CONFIG_DIR/config.yaml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "")
+fi
+
+if [[ -z "$SECRET" ]]; then
+  echo "错误：读取 secret 失败，请创建 $SECRET_FILE 或确认 config.yaml 里有 secret 字段"
+  exit 1
 fi
 
 if [[ $# -lt 1 ]]; then
@@ -22,13 +27,14 @@ fi
 
 cmd="$1"
 
-# 获取所有 provider 名称
+# 获取所有 HTTP 类型 provider 名称
 get_providers() {
   curl -s -H "Authorization: Bearer $SECRET" "$API_URL/providers/proxies" | \
     python3 -c "
 import json, sys
 data = json.load(sys.stdin)
-for name, info in data.get('proxies', {}).items():
+# API 返回的是 providers 字段
+for name, info in data.get('providers', {}).items():
     if info.get('vehicleType') == 'HTTP':
         print(name)
 " 2>/dev/null
@@ -39,7 +45,7 @@ refresh_provider() {
   local name="$1"
   result=$(curl -s -o /dev/null -w "%{http_code}" -X PUT \
     -H "Authorization: Bearer $SECRET" \
-    "$API_URL/providers/proxies/$name")
+    "$API_URL/providers/proxies/$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$name")")
   if [[ "$result" == "204" ]]; then
     echo "✓ $name 刷新成功"
   else
@@ -51,7 +57,10 @@ if [[ "$cmd" == "all" ]]; then
   echo "刷新所有订阅..."
   providers=$(get_providers)
   if [[ -z "$providers" ]]; then
-    echo "未找到任何订阅，请确认 Clash 正在运行"
+    echo "未找到任何 HTTP 类型订阅"
+    echo "调试信息："
+    curl -s -H "Authorization: Bearer $SECRET" "$API_URL/providers/proxies" | \
+      python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'  {n}: vehicleType={v.get(\"vehicleType\")}') for n,v in d.get('providers',{}).items()]"
     exit 1
   fi
   while IFS= read -r p; do
@@ -59,14 +68,13 @@ if [[ "$cmd" == "all" ]]; then
   done <<< "$providers"
   echo "全部完成！"
 else
-  # 查找 profile 对应的 provider 名称
   profile="$PROFILE_DIR/${cmd}.yaml"
   if [[ ! -f "$profile" ]]; then
     echo "配置不存在: $profile"
     exit 1
   fi
-  # 从 profile 里读取 provider 名称
-  provider_name=$(grep -A1 "^proxy-providers:" "$profile" 2>/dev/null | tail -1 | tr -d ' :' || echo "$cmd")
+  # 从 profile 里读取 provider 显示名称（proxy-providers 下的第一个 key）
+  provider_name=$(sudo grep -A1 '^proxy-providers:' "$profile" 2>/dev/null | tail -1 | sed 's/^ *//' | tr -d ':' || echo "$cmd")
   echo "刷新订阅: $cmd ($provider_name)..."
   refresh_provider "$provider_name"
 fi
