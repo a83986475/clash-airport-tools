@@ -2,13 +2,25 @@
 set -euo pipefail
 CONFIG_DIR="/root/.config/clash"
 PROFILE_DIR="$CONFIG_DIR/profiles"
+DASHBOARD_DIR="$CONFIG_DIR/dashboard"
+SECRET_FILE="$CONFIG_DIR/secret.txt"
 trim(){ local var="$*"; var="${var#"${var%%[![:space:]]*}"}"; var="${var%"${var##*[![:space:]]}"}"; printf '%s' "$var"; }
+
+# 读取 secret
+if [[ -f "$SECRET_FILE" ]]; then
+  SECRET=$(cat "$SECRET_FILE")
+else
+  SECRET=$(sudo grep '^secret:' "$CONFIG_DIR/config.yaml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "clash123456")
+fi
+
 [[ $# -lt 1 ]] && echo "用法: update-airport-url 名字" && exit 1
 key="$1"; file="$PROFILE_DIR/${key}.yaml"
 [[ ! -f "$file" ]] && echo "配置不存在: $file" && exit 1
+
 display_name="$(awk '/^proxy-providers:/{flag=1;next} flag && $0 ~ /^[[:space:]]{2}[^:]+:$/ {gsub(/^[[:space:]]+|:$/, "", $0); print; exit}' "$file")"
-old_url="$(awk '/^[[:space:]]*url:[[:space:]]*/ {sub(/^[[:space:]]*url:[[:space:]]*/, "", $0); gsub(/^"|"$/, "", $0); print; exit}' "$file")"
+old_url="$(awk '/^[[:space:]]*url:[[:space:]]*"https?:/ {sub(/^[[:space:]]*url:[[:space:]]*/, "", $0); gsub(/^"|"$/, "", $0); print; exit}' "$file")"
 [[ -z "$display_name" ]] && echo "无法读取显示名称" && exit 1
+
 echo "当前机场: $key"
 echo "显示名称: $display_name"
 echo "当前订阅: $old_url"
@@ -16,20 +28,22 @@ echo
 read -rp "请输入新的订阅链接: " raw_url
 new_url="$(trim "$raw_url")"
 [[ -z "$new_url" ]] && echo "订阅链接不能为空" && exit 1
+
 cat > "$file" <<EOT
 port: 7890
 socks-port: 7891
 allow-lan: true
 mode: rule
 log-level: info
-external-controller: 0.0.0.0:9090
-secret: clash123456
-external-ui: /root/.config/clash/dashboard
+external-controller: 127.0.0.1:9090
+secret: ${SECRET}
+external-ui: ${DASHBOARD_DIR}
 
 proxy-providers:
   ${display_name}:
     type: http
     url: "${new_url}"
+    proxy: 节点选择
     path: ./providers/${key}.yaml
     interval: 3600
     health-check:
