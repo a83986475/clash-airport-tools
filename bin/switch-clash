@@ -4,8 +4,7 @@ CONFIG_DIR="/root/.config/clash"
 PROFILE_DIR="$CONFIG_DIR/profiles"
 MAP_FILE="$CONFIG_DIR/profile-map.txt"
 CLASH_BIN="/root/clash/clash"
-CLASH_ARGS="-d $CONFIG_DIR"
-CLASH_LOG="/tmp/clash.log"
+CLASH_LOG="/root/clash/clash.log"
 
 if [[ $# -lt 1 ]]; then
   echo "用法:"
@@ -24,7 +23,7 @@ fi
 target="$PROFILE_DIR/${cmd}.yaml"
 [[ ! -f "$target" ]] && echo "配置不存在: $target" && exit 1
 
-cp "$target" "$CONFIG_DIR/config.yaml"
+sudo cp "$target" "$CONFIG_DIR/config.yaml"
 echo "已复制配置: $cmd"
 
 # 尝试 systemd 重启
@@ -33,7 +32,7 @@ if systemctl list-unit-files 2>/dev/null | grep -q '^clash\.service'; then SERVI
 elif systemctl list-unit-files 2>/dev/null | grep -q '^mihomo\.service'; then SERVICE_NAME="mihomo"; fi
 
 if [[ -n "$SERVICE_NAME" ]]; then
-  systemctl restart "$SERVICE_NAME"
+  sudo systemctl restart "$SERVICE_NAME"
   sleep 1
   if systemctl is-active --quiet "$SERVICE_NAME"; then
     echo "已切换到: $cmd"
@@ -47,21 +46,20 @@ else
   # nohup 模式：杀旧进程，启动新进程
   OLD_PID=$(pgrep -f "$CLASH_BIN" 2>/dev/null || true)
   if [[ -n "$OLD_PID" ]]; then
-    kill $OLD_PID 2>/dev/null || true
+    sudo kill $OLD_PID 2>/dev/null || true
     sleep 1
-    # 如果还没退出，强制杀
-    kill -0 $OLD_PID 2>/dev/null && kill -9 $OLD_PID 2>/dev/null || true
+    sudo kill -0 $OLD_PID 2>/dev/null && sudo kill -9 $OLD_PID 2>/dev/null || true
     sleep 1
   fi
-  nohup $CLASH_BIN $CLASH_ARGS >> "$CLASH_LOG" 2>&1 &
-  NEW_PID=$!
+  sudo bash -c "nohup $CLASH_BIN -d $CONFIG_DIR >> $CLASH_LOG 2>&1 &"
   sleep 2
-  if kill -0 $NEW_PID 2>/dev/null; then
+  NEW_PID=$(pgrep -f "$CLASH_BIN" 2>/dev/null || true)
+  if [[ -n "$NEW_PID" ]]; then
     echo "已切换到: $cmd (PID $NEW_PID)"
     echo "日志: $CLASH_LOG"
   else
-    echo "Clash 启动失败，查看日志: $CLASH_LOG"
-    tail -20 "$CLASH_LOG"
+    echo "Clash 启动失败，查看日志:"
+    sudo tail -20 "$CLASH_LOG"
     exit 1
   fi
 fi
