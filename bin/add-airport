@@ -36,7 +36,7 @@ proxy-providers:
   ${display_name}:
     type: http
     url: "${sub_url}"
-    proxy: 节点选择
+    proxy: DIRECT
     path: ${provider_file}
     interval: 3600
     health-check:
@@ -56,11 +56,12 @@ proxy-groups:
     type: url-test
     use:
       - ${display_name}
-    url: https://www.gstatic.com/generate_204
-    interval: 300
+    url: https://speed.cloudflare.com/__down?bytes=1024
+    interval: 120
+    tolerance: 50
 
 rules:
-  - MATCH,节点选择
+  - MATCH,自动选择
 EOT
 }
 
